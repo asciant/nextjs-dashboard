@@ -17,9 +17,6 @@ const libsql = createClient({
 const adapter = new PrismaLibSQL(libsql);
 const prisma = new PrismaClient({ adapter });
 
-const wait = (amount = 0) =>
-  new Promise((resolve) => setTimeout(resolve, amount));
-
 async function seedUsers() {
   try {
     // Insert data into the "users" table
@@ -105,7 +102,6 @@ async function seedRevenue() {
     // Insert data into the "revenue" table
     const insertedRevenue = await Promise.all(
       revenue.map(async (rev) => {
-        await wait(200);
         return prisma.revenue.create({
           data: {
             month: rev.month,
