@@ -1,4 +1,5 @@
 import { sql } from "@vercel/postgres";
+import { desc } from "drizzle-orm";
 import {
   CustomerField,
   CustomersTable,
@@ -10,6 +11,7 @@ import {
 } from "./definitions";
 import { formatCurrency } from "./utils";
 import prisma from "@/app/lib/db";
+import { db } from "@/app/lib/drizzle";
 
 export async function fetchRevenue() {
   // Add noStore() here prevent the response from being cached.
@@ -18,13 +20,7 @@ export async function fetchRevenue() {
   try {
     // Artificially delay a reponse for demo purposes.
     // Don't do this in real life :)
-
-    console.log("Fetching revenue data...");
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    const data = await prisma.revenue.findMany();
-
-    console.log("Data fetch complete after 3 seconds.");
+    const data = await db.query.revenue.findMany();
 
     return data;
   } catch (error) {
@@ -35,14 +31,12 @@ export async function fetchRevenue() {
 
 export async function fetchLatestInvoices() {
   try {
-    const invoices = await prisma.invoice.findMany({
-      include: {
+    const invoices = await db.query.invoice.findMany({
+      with: {
         customer: true,
       },
-      take: 5,
-      orderBy: {
-        date: "desc",
-      },
+      orderBy: (invoice, { desc }) => [desc(invoice.date)],
+      limit: 5,
     });
 
     const latestInvoices = invoices.map((invoice) => ({
