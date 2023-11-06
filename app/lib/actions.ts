@@ -3,7 +3,8 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import prisma from "@/app/lib/db";
+import { db } from "@/app/lib/drizzle";
+import { invoice } from "@/app/lib/schema";
 
 const InvoiceSchema = z.object({
   id: z.string(),
@@ -25,18 +26,9 @@ export async function createInvoice(formData: FormData) {
   const amountInCents = amount * 100;
   const date = new Date().toISOString().split("T")[0];
 
-  await prisma.invoice.create({
-    data: {
-      customer: {
-        connect: {
-          id: customerId,
-        },
-      },
-      amount: amountInCents,
-      status,
-      date,
-    },
-  });
+  await db
+    .insert(invoice)
+    .values({ customerId, amount: amountInCents, status, date });
 
   revalidatePath("/dashboard/invoices");
   redirect("/dashboard/invoices");

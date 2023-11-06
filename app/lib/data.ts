@@ -1,5 +1,6 @@
-import { sql } from "@vercel/postgres";
-import { desc } from "drizzle-orm";
+import { sql as vercelSql } from "@vercel/postgres";
+import { sql, or, like, eq, desc } from "drizzle-orm";
+import { toInteger } from "lodash";
 import {
   CustomerField,
   CustomersTable,
@@ -12,6 +13,7 @@ import {
 import { formatCurrency } from "./utils";
 import prisma from "@/app/lib/db";
 import { db } from "@/app/lib/drizzle";
+import { revenue, customer, invoice } from "@/app/lib/schema";
 
 export async function fetchRevenue() {
   // Add noStore() here prevent the response from being cached.
@@ -55,42 +57,40 @@ export async function fetchCardData() {
     // You can probably combine these into a single SQL query
     // However, we are intentionally splitting them to demonstrate
     // how to initialize multiple queries in parallel with JS.
-    const invoiceCountPromise = prisma.invoice.count();
-    const customerCountPromise = prisma.customer.count();
-    const paidInvoiceStatusPromise = prisma.invoice.aggregate({
-      where: {
-        status: "paid",
-      },
-      _sum: {
-        amount: true,
-      },
-    });
-
-    const pendingInvoiceStatusPromise = prisma.invoice.aggregate({
-      where: {
-        status: "pending",
-      },
-      _sum: {
-        amount: true,
-      },
-    });
+    const invoiceCountPromise = db
+      .select({
+        count: sql<number>`count(*)`,
+      })
+      .from(revenue);
+    const customerCountPromise = db
+      .select({
+        count: sql<number>`count(*)`,
+      })
+      .from(customer);
+    const invoiceStatusPromise = db
+      .select({
+        count: sql<number>`sum(${invoice.amount})`.as("count"),
+      })
+      .from(invoice)
+      .groupBy(invoice.status);
 
     // const invoiceStatusPromise = sql`SELECT
     //      SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS "paid",
     //      SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) AS "pending"
     //      FROM invoices`;
 
-    const data = await Promise.all([
+    const result = await Promise.all([
       invoiceCountPromise,
       customerCountPromise,
-      paidInvoiceStatusPromise,
-      pendingInvoiceStatusPromise,
+      invoiceStatusPromise,
     ]);
 
-    const numberOfInvoices = Number(data[0] ?? "0");
-    const numberOfCustomers = Number(data[1] ?? "0");
-    const totalPaidInvoices = formatCurrency(data[2]._sum.amount ?? 0);
-    const totalPendingInvoices = formatCurrency(data[3]._sum.amount ?? 0);
+    const data = result.flatMap((array) => array.map((row) => row));
+
+    const numberOfInvoices = Number(data[0].count ?? "0");
+    const numberOfCustomers = Number(data[1].count ?? "0");
+    const totalPaidInvoices = formatCurrency(data[2].count ?? 0);
+    const totalPendingInvoices = formatCurrency(data[3].count ?? 0);
 
     return {
       numberOfCustomers,
@@ -112,31 +112,22 @@ export async function fetchFilteredInvoices(
   const offset = (currentPage - 1) * ITEMS_PER_PAGE;
 
   try {
-    const invoices = await prisma.invoice.findMany({
-      where: {
-        OR: [
-          { customer: { name: { contains: query } } },
-          { customer: { email: { contains: query } } },
-          {
-            amount: {
-              equals: Number.isNaN(parseFloat(query))
-                ? undefined
-                : parseFloat(query),
-            },
-          },
-          { date: { contains: query } },
-          { status: { contains: query } },
-        ],
-      },
-      include: {
-        customer: true,
-      },
-      orderBy: {
-        date: "desc",
-      },
-      take: ITEMS_PER_PAGE,
-      skip: offset,
-    });
+    const invoices = await db
+      .select()
+      .from(invoice)
+      .leftJoin(customer, eq(customer.id, invoice.customerId))
+      .where(
+        or(
+          like(customer.name, `%${query}%`),
+          like(customer.email, `%${query}%`),
+          eq(invoice.amount, toInteger(query)),
+          eq(invoice.date, query),
+          eq(invoice.status, query)
+        )
+      )
+      .orderBy(desc(invoice.date))
+      .limit(ITEMS_PER_PAGE)
+      .offset(offset);
 
     return invoices;
   } catch (error) {
@@ -147,25 +138,23 @@ export async function fetchFilteredInvoices(
 
 export async function fetchInvoicesPages(query: string) {
   try {
-    const count = await prisma.invoice.count({
-      where: {
-        OR: [
-          { customer: { name: { contains: query } } },
-          { customer: { email: { contains: query } } },
-          {
-            amount: {
-              equals: Number.isNaN(parseFloat(query))
-                ? undefined
-                : parseFloat(query),
-            },
-          },
-          { date: { contains: query } },
-          { status: { contains: query } },
-        ],
-      },
-    });
+    const invoices = await db
+      .select({
+        count: sql<number>`count(*)`,
+      })
+      .from(invoice)
+      .leftJoin(customer, eq(customer.id, invoice.customerId))
+      .where(
+        or(
+          like(customer.name, `%${query}%`),
+          like(customer.email, `%${query}%`),
+          eq(invoice.amount, toInteger(query)),
+          eq(invoice.date, query),
+          eq(invoice.status, query)
+        )
+      );
 
-    const totalPages = Math.ceil(Number(count) / ITEMS_PER_PAGE);
+    const totalPages = Math.ceil(Number(invoices[0].count) / ITEMS_PER_PAGE);
     return totalPages;
   } catch (error) {
     console.error("Database Error:", error);
@@ -175,7 +164,7 @@ export async function fetchInvoicesPages(query: string) {
 
 export async function fetchInvoiceById(id: string) {
   try {
-    const data = await sql<InvoiceForm>`
+    const data = await vercelSql<InvoiceForm>`
       SELECT
         invoices.id,
         invoices.customer_id,
@@ -218,7 +207,7 @@ export async function fetchCustomers() {
 
 export async function fetchFilteredCustomers(query: string) {
   try {
-    const data = await sql<CustomersTable>`
+    const data = await vercelSql<CustomersTable>`
 		SELECT
 		  customers.id,
 		  customers.name,
@@ -251,7 +240,7 @@ export async function fetchFilteredCustomers(query: string) {
 
 export async function getUser(email: string) {
   try {
-    const user = await sql`SELECT * from USERS where email=${email}`;
+    const user = await vercelSql`SELECT * from USERS where email=${email}`;
     return user.rows[0] as User;
   } catch (error) {
     console.error("Failed to fetch user:", error);

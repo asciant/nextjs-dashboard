@@ -28,7 +28,7 @@ export type NewUser = InferInsertModel<typeof user>;
 export const customer = sqliteTable("Customer", {
   id: text("id").primaryKey().default(uuidv4()),
   name: text("name").notNull(),
-  email: text("image").notNull(),
+  email: text("email").notNull(),
   image_url: text("image_url").notNull(),
 });
 
