@@ -27,9 +27,15 @@ export async function createInvoice(formData: FormData) {
   const amountInCents = amount * 100;
   const date = new Date().toISOString().split("T")[0];
 
-  await db
-    .insert(invoice)
-    .values({ customerId, amount: amountInCents, status, date });
+  try {
+    await db
+      .insert(invoice)
+      .values({ customerId, amount: amountInCents, status, date });
+  } catch (error) {
+    return {
+      message: "Database Error: Failed to Create Invoice.",
+    };
+  }
 
   revalidatePath("/dashboard/invoices");
   redirect("/dashboard/invoices");
@@ -46,16 +52,28 @@ export async function updateInvoice(id: string, formData: FormData) {
 
   const amountInCents = amount * 100;
 
-  await db
-    .update(invoice)
-    .set({ customerId, amount: amountInCents, status })
-    .where(eq(invoice.id, id));
+  try {
+    await db
+      .update(invoice)
+      .set({ customerId, amount: amountInCents, status })
+      .where(eq(invoice.id, id));
+  } catch (error) {
+    return { message: "Database Error: Failed to Update Invoice." };
+  }
 
   revalidatePath("/dashboard/invoices");
   redirect("/dashboard/invoices");
 }
 
 export async function deleteInvoice(id: string) {
-  await db.delete(invoice).where(eq(invoice.id, id));
+  throw new Error("Failed to Delete Invoice");
+
+  try {
+    await db.delete(invoice).where(eq(invoice.id, id));
+  } catch (error) {
+    return { message: "Database Error: Failed to Delete Invoice." };
+  }
+
   revalidatePath("/dashboard/invoices");
+  return { message: "Deleted Invoice." };
 }

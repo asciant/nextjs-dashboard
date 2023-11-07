@@ -2,6 +2,7 @@ import { sql as vercelSql } from "@vercel/postgres";
 import { sql, or, like, eq, desc } from "drizzle-orm";
 import { toInteger } from "lodash";
 import { notFound } from "next/navigation";
+import { unstable_noStore as noStore } from "next/cache";
 import {
   CustomerField,
   CustomersTable,
@@ -18,6 +19,7 @@ import { revenue, customer, type Customer, invoice } from "@/app/lib/schema";
 export async function fetchRevenue() {
   // Add noStore() here prevent the response from being cached.
   // This is equivalent to in fetch(..., {cache: 'no-store'}).
+  noStore();
 
   try {
     // Artificially delay a reponse for demo purposes.
@@ -32,6 +34,7 @@ export async function fetchRevenue() {
 }
 
 export async function fetchLatestInvoices() {
+  noStore();
   try {
     const invoices = await db.query.invoice.findMany({
       with: {
@@ -53,6 +56,7 @@ export async function fetchLatestInvoices() {
 }
 
 export async function fetchCardData() {
+  noStore();
   try {
     // You can probably combine these into a single SQL query
     // However, we are intentionally splitting them to demonstrate
@@ -109,6 +113,7 @@ export async function fetchFilteredInvoices(
   query: string,
   currentPage: number
 ) {
+  noStore();
   const offset = (currentPage - 1) * ITEMS_PER_PAGE;
 
   try {
@@ -137,6 +142,7 @@ export async function fetchFilteredInvoices(
 }
 
 export async function fetchInvoicesPages(query: string) {
+  noStore();
   try {
     const invoices = await db
       .select({
@@ -163,6 +169,7 @@ export async function fetchInvoicesPages(query: string) {
 }
 
 export async function fetchInvoiceById(id: string) {
+  noStore();
   try {
     const data = await db.query.invoice.findFirst({
       where: (invoice, { eq }) => eq(invoice.id, id),
@@ -175,10 +182,10 @@ export async function fetchInvoiceById(id: string) {
     });
 
     if (!data) {
-      return notFound();
+      return null;
     }
 
-    const invoices = { ...data, amount: data.amount ?? 0 / 100 };
+    const invoices = { ...data, amount: data.amount / 100 };
     return invoices;
   } catch (error) {
     console.error("Database Error:", error);
@@ -186,6 +193,7 @@ export async function fetchInvoiceById(id: string) {
 }
 
 export async function fetchCustomers() {
+  noStore();
   try {
     const customers = await db.query.customer.findMany({
       columns: {
@@ -203,6 +211,7 @@ export async function fetchCustomers() {
 }
 
 export async function fetchFilteredCustomers(query: string) {
+  noStore();
   try {
     const data = await vercelSql<CustomersTable>`
 		SELECT
