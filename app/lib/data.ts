@@ -1,6 +1,7 @@
 import { sql as vercelSql } from "@vercel/postgres";
 import { sql, or, like, eq, desc } from "drizzle-orm";
 import { toInteger } from "lodash";
+import { notFound } from "next/navigation";
 import {
   CustomerField,
   CustomersTable,
@@ -11,9 +12,8 @@ import {
   Revenue,
 } from "./definitions";
 import { formatCurrency } from "./utils";
-import prisma from "@/app/lib/db";
 import { db } from "@/app/lib/drizzle";
-import { revenue, customer, invoice } from "@/app/lib/schema";
+import { revenue, customer, type Customer, invoice } from "@/app/lib/schema";
 
 export async function fetchRevenue() {
   // Add noStore() here prevent the response from being cached.
@@ -164,23 +164,22 @@ export async function fetchInvoicesPages(query: string) {
 
 export async function fetchInvoiceById(id: string) {
   try {
-    const data = await vercelSql<InvoiceForm>`
-      SELECT
-        invoices.id,
-        invoices.customer_id,
-        invoices.amount,
-        invoices.status
-      FROM invoices
-      WHERE invoices.id = ${id};
-    `;
+    const data = await db.query.invoice.findFirst({
+      where: (invoice, { eq }) => eq(invoice.id, id),
+      columns: {
+        id: true,
+        customerId: true,
+        amount: true,
+        status: true,
+      },
+    });
 
-    const invoice = data.rows.map((invoice) => ({
-      ...invoice,
-      // Convert amount from cents to dollars
-      amount: invoice.amount / 100,
-    }));
+    if (!data) {
+      return notFound();
+    }
 
-    return invoice[0];
+    const invoices = { ...data, amount: data.amount ?? 0 / 100 };
+    return invoices;
   } catch (error) {
     console.error("Database Error:", error);
   }
@@ -188,14 +187,12 @@ export async function fetchInvoiceById(id: string) {
 
 export async function fetchCustomers() {
   try {
-    const customers = await prisma.customer.findMany({
-      select: {
+    const customers = await db.query.customer.findMany({
+      columns: {
         id: true,
         name: true,
       },
-      orderBy: {
-        name: "asc",
-      },
+      orderBy: (customer, { desc }) => [desc(customer.name)],
     });
 
     return customers;

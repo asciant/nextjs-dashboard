@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
 import { db } from "@/app/lib/drizzle";
 import { invoice } from "@/app/lib/schema";
 
@@ -32,4 +33,29 @@ export async function createInvoice(formData: FormData) {
 
   revalidatePath("/dashboard/invoices");
   redirect("/dashboard/invoices");
+}
+
+const UpdateInvoice = InvoiceSchema.omit({ id: true, date: true });
+
+export async function updateInvoice(id: string, formData: FormData) {
+  const { customerId, amount, status } = UpdateInvoice.parse({
+    customerId: formData.get("customerId"),
+    amount: formData.get("amount"),
+    status: formData.get("status"),
+  });
+
+  const amountInCents = amount * 100;
+
+  await db
+    .update(invoice)
+    .set({ customerId, amount: amountInCents, status })
+    .where(eq(invoice.id, id));
+
+  revalidatePath("/dashboard/invoices");
+  redirect("/dashboard/invoices");
+}
+
+export async function deleteInvoice(id: string) {
+  await db.delete(invoice).where(eq(invoice.id, id));
+  revalidatePath("/dashboard/invoices");
 }
